@@ -21,20 +21,18 @@ def complete_basis(B, E) :
 
     
 
-def ROMKeyGen(q,k,v) :
+def ROMKeyGen(q,m,v) :
     """
-    This function generates a fake UOV public key by generating a collection of random invertible matrices, 
-    symmetrizing them in odd characteristic.
+    This function generates a collection of random matrices representing generic quadratic forms.
     It returns a pair (A,F), G where (A,F) are identity matrices to be consistent with the non-ROM KeyGen. 
     """
     FF = GF(q)
-    n = k+v
-    G = [ matrix(FF,complete_basis([], FF**(n))) for _ in range(k)]
-    if (q%2) != 0 : #In even characteristic, we represent the public key cannonically with a triangular matrix. We can also represent it 
-                    #with an arbitrary sum of this triangular matrix and any symmetric matrix. This property holds in any field.
-        for i in range(k):
-            G[i] = FF(2)**(-1)*(G[i] + G[i].transpose())
-    return (matrix.identity(n), [matrix.identity(n) for _ in range(k)]), G 
+    n = m+v
+    G = [ matrix(FF,complete_basis([], FF**(n))) for _ in range(m)]
+    if (q%2) != 0 :
+        for i in range(m):
+            G[i] = (G[i] + G[i].transpose())
+    return (matrix.identity(n), [matrix.identity(n) for _ in range(m)]), G 
 
 def upper(g) :
     """ 
@@ -70,40 +68,39 @@ def complete_basis(B, E) :
     
 
 
-def KeyGen(q,k,v, m=None, verbose = False, triangular = False):
+def KeyGen(q,o,v, m=None, verbose = False):
     """
-    This function generates a key pair for UOV parameters k,v where k is the dimension of the oil subspace and v the dimension of the vinegar subspace.
-    To do this, we sample random matrices with a block of zero of size to produce the private key, and impose that they must be invertible.
-    We sample a random invertible change of variables A, compute G = F\circ A, and return the pair (A,F), G.
+    This function generates a key pair for UOV parameters o,v where o is the dimension of the oil subspace and v the dimension of the vinegar subspace.
+    By default, m=o, but the optional parameter m controls the number of polynomials generated. 
+    To do this, we sample random matrices with a block of zero of size to produce the private key.
+    We sample a random invertible change of variables A, compute G = F circ A, and return the pair (A,F), G.
     (A,F) is the UOV private key, G is the UOV public key. The corresponding systems are obtained by evaluating the quadratic forms over FF[x1,...,xn].
     Important notice: This code is a demonstration tool and should not used for applications where security matters. 
     """
     if m is None :
-        m = k
-    n = k+v 
+        m = o
+    n = o+v 
     FF = GF(q)
     RR = None 
     if verbose :
         RR = PolynomialRing(FF, 'x', n)
+    
     #Define A
-
     A = matrix.identity(FF,n)
-    for i in range(n-k) :
-        for j in range(k) :
-
+    for i in range(n-o) :
+        for j in range(o) :
             A[n-1-i,j] = FF.random_element()
-    #print(A)
+            
     #Define F, G
     F = []
     G = []
     for e in range(m):
         Fe = matrix(FF, n, n)
-        while Fe.determinant() == 0 :
-            B0 = matrix(FF,k,k)
-            B1 = random_matrix(FF,k,v)
-            B2 = random_matrix(FF,v,k)
-            B3 = random_matrix(FF,v,v)
-            Fe = block_matrix([[B0,B1],[B2,B3]])
+        B0 = matrix(FF,o,o)
+        B1 = random_matrix(FF,o,v)
+        B2 = random_matrix(FF,v,o)
+        B3 = random_matrix(FF,v,v)
+        Fe = block_matrix([[B0,B1],[B2,B3]])
         
         if FF.characteristic() != 2 : 
             Fe = FF(2)**(-1)*(Fe+Fe.transpose())
@@ -119,19 +116,22 @@ def KeyGen(q,k,v, m=None, verbose = False, triangular = False):
     return ((A,F), G) 
     
 def Sign(PrK, M, depth = 0, verbose = False): 
-    
+    """
+    Given a UOV private key (A,F), a target M, and a maximum number of allowed signature fails, attempt to produce a valid signature X of M.
+    """
+
     max_depth = 10 #Fail after 10 retries (arbitrary value). Probability : (p_failure)^10 
     if depth > max_depth:
         raise Exception("The signature procedure has failed.")
     
     A,F = PrK
     q = A.base_ring().cardinality()
-    k = len(F)
+    m = len(F)
     n = F[0].dimensions()[0]
-    v = n- k
+    v = n-m
     A_1 = A.inverse()
     FF = GF(q)
-    RR = PolynomialRing(FF, 'x', k)
+    RR = PolynomialRing(FF, 'x', m)
     X = RR.gens()
 
     #Generate random values for vinegar variables.
@@ -141,23 +141,24 @@ def Sign(PrK, M, depth = 0, verbose = False):
 
     #Use linear algebra to solve for oil variables.
     system = []
-    for e in range(k):
+    for e in range(m):
         system.append(Y*F[e]*Y)
     if verbose:
         print("The signer solves the system: ", system)
     #This system is linear in x_1, ..., x_k 
-    mat = [ [ 0 for _ in range(k)] for _ in range(k)]
-    for i in range(k) :
-        for j in range(k) :
+    mat = [ [ 0 for _ in range(m)] for _ in range(m)]
+    for i in range(m) :
+        for j in range(m) :
             mat[i][j] = system[i].coefficient(X[j])
 
     S = matrix(FF, mat)
-    B = vector([system[i]([0 for _ in range(k)]) for i in range(k)])
+    B = vector([system[i]([0 for _ in range(m)]) for i in range(m)])
     target = M-B 
 
     try: 
         Y_1 = S.solve_right(target)
     except:
+        print("The system is not invertible, we try again with different random values.")
         return Sign(PrK, M, depth+1, verbose) 
     Y_hat = vector(FF, list(Y_1) + Y_2) #Recombination
     
@@ -168,18 +169,12 @@ def Sign(PrK, M, depth = 0, verbose = False):
     return A_1*Y_hat
 
 def Verify(M, X, G, verbose = False): 
-    k = len(G)
+    m = len(G)
     n = len(X)
-    v = n-k 
-    q = G[0].base_ring().cardinality()
-    FF = GF(q)
-    RR = PolynomialRing(FF, 'x', n) 
-    
-    ver = True
-    for e in range(k):
+    v = n-m 
+    for e in range(m):
         if verbose :
-            print(("G"+str(e)+"(X)= ", X*G[e]*X," M"+str(e)+"= ", M[e]))
-        ver = ( X*G[e]*X==M[e])
-        if not(ver):
+            print("P"+str(e)+"(X)= ", X*G[e]*X,"and M"+str(e)+"= ", M[e])
+        if not X*G[e]*X==M[e]:
             return False
     return True

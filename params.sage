@@ -30,42 +30,6 @@ VOXparams =[(251,8,9,6,6,"I"),
 ]
 
 
-
-
-def dreg_semi_reg(n,m, verbose=False) :
-    """ 
-    HS of a semi-regular quadratic system m in n variables.   
-    """
-    R.<t> = PowerSeriesRing(ZZ)
-    h = (1-t^2)^(m)/(1-t)^(n) 
-    #print(list(h))
-    L = list(h)
-    for i in range(len(L)) :
-        if L[i] <= 0 :
-            if verbose :
-                print(L[i])
-            return i
-    return len(L)+1
-
-def cost_semi_reg(n,m,q) :
-    """
-    Compute the bit cost of solving a semi regular system of n variables m equatoins in Fq assuming "sparse solver"
-    """
-    d = dreg_semi_reg(n,m)
-    
-    mini= float(log(binomial(n + d, d)**2 * binomial(n, 2),2))
-    k_min = 0
-    for k in range(1,m-1) :
-        d = dreg_semi_reg(n-k,m)
-        
-        temp = float(log(q^k * binomial(n-k + d, d)**2 * binomial(n-k, 2),2))
-        
-        if temp < mini :
-            mini = temp 
-            k_min = k
-    print("kmin", k_min)
-    return mini + float(log(3*2*(log(q, 2)**2 + log(q,2)),2))
-
 mrVOXparams =[
 (251,4,7,13,6,"Ia"),
 (251,5,9,11,6,"Ib"),
@@ -120,3 +84,87 @@ hp_params = [
     [2^9, 64, 72, 8, '192'],
     [2^12, 88, 96, 8, '256']
 ]
+
+### Cost of an arithmetic operation in gates
+def gates(q):
+    """
+    Return the cost of one multiplication in Fq in gates following NIST methodology.
+    """
+    return log(3*2*(log(q, 2)**2 + log(q,2)),2)
+
+def dreg_semi_reg(n,m, verbose=False) :
+    """ 
+    HS of a semi-regular quadratic system m in n variables.   
+    """
+    R.<t> = PowerSeriesRing(ZZ)
+    h = (1-t^2)^(m)/(1-t)^(n) 
+    #print(list(h))
+    L = list(h)
+    for i in range(len(L)) :
+        if L[i] <= 0 :
+            if verbose :
+                print(L[i])
+            return i
+    return len(L)+1
+
+def cost_semi_reg(n,m,q) :
+    """
+    Compute the bit cost of solving a semi regular system of n variables m equatoins in Fq assuming "sparse solver"
+    """
+    d = dreg_semi_reg(n,m)
+    
+    mini= float(log(binomial(n + d, d)**2 * binomial(n, 2),2))
+    k_min = 0
+    for k in range(1,m-1) :
+        d = dreg_semi_reg(n-k,m)
+        
+        temp = float(log(q^k * binomial(n-k + d, d)**2 * binomial(n-k, 2),2))
+        
+        if temp < mini :
+            mini = temp 
+            k_min = k
+    print("kmin", k_min)
+    return mini + float(log(3*2*(log(q, 2)**2 + log(q,2)),2))
+
+
+###Direct attack
+def thomae_wolf(n,m):
+    """
+    Return k such that a solution of a quadratic system in m eqs and n vars can be found by solving a systme in m-k eqs and vars.
+    """
+    r = 0
+    while r*(m-1) <= n-m :
+        r+=1
+    return r-1
+
+def cost_direct(n,m,q):
+    """
+    Cost of forging a signature of an MQ system over Fq in n vars and m eqs.
+    """
+    r = 0
+    if q % 2 :
+        if n > 2*m +2 :
+            r=1 # Chap 10
+    else :
+        r = thomae_wolf(n,m)
+    cost, k = cost_semi_reg(m-r,m-r,q)
+    return cost, r, k
+
+### Kipnis Shamir
+def cost_ks(n,m,q) :
+    """ 
+    Cost of the Kipnis-Shamir attack against UOV(n,m,q)
+    """
+    return float(log(q^(n-2*m)*n^2.81, 2))
+
+### Intersection 
+def cost_inter(n,m,q):
+    k = 2
+    """while (n < (2*k-1)/(k-1)*m) and (k<=m) :
+        k+=1
+    k-=1
+    """
+    N_vars =  n*k - (2*k-1 )*m
+    M_eqs = binomial(k+1,2)*m - 2*binomial(k,2)
+    cost, i = cost_semi_reg(N_vars,M_eqs,q)
+    return cost, i, k

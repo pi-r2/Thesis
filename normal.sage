@@ -196,8 +196,7 @@ def quadric_normal_form(g, verbose = False, randomize=False) :
         B = B*C
         if verbose :
             print(A, '\n')
-            print("Rank of the change of variables: ", B.rank(),'\n')
-
+            
     #In case the form is degenerate, we put the zeros in front to facilitate the computation of isotropic subspaces.  
     first_zero = 0
     while A.diagonal()[first_zero] == 0 : 

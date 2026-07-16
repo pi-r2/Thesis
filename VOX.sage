@@ -1,3 +1,4 @@
+load('UOV.sage')
 def hpKeyGen(q,o,v,m,t ) :
     """ 
     m equations of a UOVhp(qovt) key.
